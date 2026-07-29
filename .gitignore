@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 .env
 media/
-data/
+data/sample_photos/
 db.sqlite3
 docs/writeup.md
 .DS_Store
