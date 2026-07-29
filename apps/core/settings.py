@@ -1,4 +1,3 @@
-# paste the full file here
 import environ
 import os
 from pathlib import Path
@@ -7,7 +6,6 @@ env = environ.Env(
     DEBUG=(bool, False)
 )
 
-# settings.py lives at apps/core/settings.py, so go up three levels to reach project root
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
@@ -18,10 +16,8 @@ SECRET_KEY = env('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env('DEBUG')
 
-# Change 1: env-driven so your Render domain can be added without touching code
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1', '0.0.0.0'])
 
-# Change 3: stops Django rejecting POST requests from your Render HTTPS domain
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
 
 
@@ -76,7 +72,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'apps.core.wsgi.application'
 
 
-# Database - Supabase Postgres (direct connection)
+# Database - Supabase Postgres
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -141,13 +137,12 @@ STORAGES = {
             "querystring_auth": False,
         },
     },
-    # WhiteNoise for static files — compresses and fingerprints for efficient caching
+    # WhiteNoise for static files
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
 
-# Change 5: HTTPS-only cookies in production; no-ops in dev when DEBUG=True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
