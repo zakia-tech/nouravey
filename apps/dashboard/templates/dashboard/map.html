@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Nouravey — Mombasa Pollution Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+  #header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: #1e293b;
+    color: #fff;
+    padding: 10px 16px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+  #header h1 { margin: 0; font-size: 18px; }
+  #header span { font-size: 13px; color: #cbd5e1; flex: 1; }
+  #report-btn {
+    background: #2563eb;
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: bold;
+  }
+  #map { height: 100vh; width: 100%; }
+  .leaflet-top.leaflet-right { top: 56px; }
+  .leaflet-top.leaflet-left { top: 56px; }
+  #legend {
+    position: absolute;
+    bottom: 20px;
+    left: 10px;
+    z-index: 1000;
+    background: #fff;
+    padding: 10px 14px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    font-size: 12px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  #loading-indicator {
+    position: absolute;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background: #1e293b;
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+  .popup-title { font-weight: bold; margin-bottom: 4px; }
+  .popup-detail { font-size: 13px; margin: 2px 0; }
+  .severity-1, .severity-2 { color: #16a34a; }
+  .severity-3 { color: #ca8a04; }
+  .severity-4, .severity-5 { color: #dc2626; }
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>🌫️ Nouravey</h1>
+  <span>Mombasa County — Pollution Intelligence Map</span>
+  <a href="/report/" id="report-btn">+ Report an Issue</a>
+</div>
+<div id="map"></div>
+<div id="loading-indicator">Loading map data...</div>
+<div id="legend">
+  <div class="legend-item"><span class="dot" style="background:#eab308"></span> Citizen Report</div>
+  <div class="legend-item"><span class="dot" style="background:#9ca3af;opacity:0.6"></span> Resolved Report</div>
+  <div class="legend-item"><span class="dot" style="background:#2563eb"></span> Air Quality</div>
+  <div class="legend-item"><span class="dot" style="background:#16a34a"></span> Low Hotspot</div>
+  <div class="legend-item"><span class="dot" style="background:#ca8a04"></span> Medium Hotspot</div>
+  <div class="legend-item"><span class="dot" style="background:#ea580c"></span> High Hotspot</div>
+  <div class="legend-item"><span class="dot" style="background:#dc2626"></span> Critical Hotspot</div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const mombasaBounds = L.latLngBounds(
+  [-4.15, 39.55],
+  [-3.95, 39.75]
+);
+
+const map = L.map('map', {
+  maxBounds: mombasaBounds,
+  maxBoundsViscosity: 1.0,
+  minZoom: 11
+});
+
+map.fitBounds(mombasaBounds);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap contributors, &copy; CARTO'
+}).addTo(map);
+
+// Accurate subcounty boundaries for all six Mombasa subcounties
+async function loadSubcountyBoundaries() {
+  const response = await fetch('/api/subcounty-boundaries/');
+  const data = await response.json();
+  L.geoJSON(data, {
+    style: { color: '#CCCC00', weight: 2, fillOpacity: 0.2, fillColor: '#A52A2A' }
+  }).addTo(map);
+}
+loadSubcountyBoundaries();
+
+// Layer groups — empty until populated by fetch below
+const reportsLayer = L.layerGroup();
+const sensorLayer = L.layerGroup();
+const hotspotsLayer = L.layerGroup();
+
+function severityColor(severity) {
+  if (severity <= 2) return '#16a34a';
+  if (severity === 3) return '#ca8a04';
+  return '#dc2626';
+}
+
+function severityLabelColor(label) {
+  const colors = { low: '#16a34a', medium: '#ca8a04', high: '#ea580c', critical: '#dc2626' };
+  return colors[label] || '#6b7280';
+}
+
+async function loadMapData() {
+  try {
+    const response = await fetch('/api/map-data/');
+    const data = await response.json();
+
+    data.reports.forEach(r => {
+      const isResolved = r.status === 'Resolved';
+      const marker = L.circleMarker([r.latitude, r.longitude], {
+        radius: isResolved ? 6 : 7,
+        fillColor: isResolved ? '#9ca3af' : '#eab308',
+        color: '#fff',
+        weight: 1.5,
+        fillOpacity: isResolved ? 0.5 : 0.9
+      });
+      marker.bindPopup(`
+        <div class="popup-title">${r.pollution_type}</div>
+        <div class="popup-detail"><strong>Ward:</strong> ${r.ward}</div>
+        <div class="popup-detail severity-${r.severity}"><strong>Severity:</strong> ${r.severity}/5</div>
+        <div class="popup-detail"><strong>Status:</strong> ${r.status}</div>
+        <div class="popup-detail">${r.likely_cause}</div>
+      `);
+      reportsLayer.addLayer(marker);
+    });
+
+    if (data.sensor) {
+      const s = data.sensor;
+      const marker = L.circleMarker([s.latitude, s.longitude], {
+        radius: 9,
+        fillColor: '#2563eb',
+        color: '#fff',
+        weight: 1.5,
+        fillOpacity: 0.9
+      });
+      marker.bindPopup(`
+        <div class="popup-title">${s.station_name}</div>
+        <div class="popup-detail"><strong>AQI:</strong> ${s.aqi}</div>
+        <div class="popup-detail">Updated: ${new Date(s.fetched_at).toLocaleString()}</div>
+      `);
+      sensorLayer.addLayer(marker);
+    }
+
+    data.hotspots.forEach(h => {
+      const circle = L.circle([h.latitude, h.longitude], {
+        radius: 400,
+        fillColor: severityLabelColor(h.severity_label),
+        color: severityLabelColor(h.severity_label),
+        weight: 2,
+        fillOpacity: 0.25
+      });
+
+      const trendColors = { worsening: '#dc2626', stable: '#ca8a04', improving: '#16a34a' };
+      const trendColor = trendColors[h.predicted_trend_raw] || '#6b7280';
+      const confidencePct = Math.round((h.prediction_confidence || 0) * 100);
+
+      circle.bindPopup(`
+        <div class="popup-title">Hotspot — ${h.ward}</div>
+        <div class="popup-detail"><strong>Severity:</strong> ${h.severity_label} (score: ${h.score})</div>
+        <div class="popup-detail"><strong>Reports:</strong> ${h.report_count}</div>
+        <div class="popup-detail">${h.narrative}</div>
+        <div class="popup-detail"><strong>Recommended:</strong> ${h.recommended_action}</div>
+        <hr style="margin:8px 0;border:none;border-top:1px solid #e2e8f0;">
+        <div class="popup-detail"><strong style="color:${trendColor};">24h Outlook:</strong> ${h.predicted_trend} (${confidencePct}% confidence)</div>
+        <div class="popup-detail" style="font-style:italic;color:#64748b;">${h.prediction_rationale}</div>
+      `);
+      hotspotsLayer.addLayer(circle);
+    });
+
+  } catch (error) {
+    console.error('Failed to load map data:', error);
+  } finally {
+    const indicator = document.getElementById('loading-indicator');
+    if (indicator) indicator.style.display = 'none';
+  }
+}
+
+loadMapData();
+
+reportsLayer.addTo(map);
+
+L.control.layers(null, {
+  'Reports': reportsLayer,
+  'Air Quality': sensorLayer,
+  'Hotspots': hotspotsLayer
+}, { collapsed: false }).addTo(map);
+</script>
+</body>
+</html>

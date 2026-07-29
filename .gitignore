@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.env
+media/
+data/
+db.sqlite3
+docs/writeup.md
+.DS_Store
+*.log

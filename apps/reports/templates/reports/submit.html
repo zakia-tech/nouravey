@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Report Pollution — Nouravey</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: sans-serif; background: #e9edf1; }
+
+  #header {
+    background: #1e293b; color: #fff; padding: 12px 16px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  #header h1 { margin: 0; font-size: 17px; }
+  #header span { font-size: 12px; color: #cbd5e1; }
+
+  #app-wrapper { height: calc(100% - 46px); display: flex; justify-content: center; background: #dde3e9; }
+  #app { display: flex; flex-direction: column; height: 100%; width: 100%; max-width: 640px; background: #e9edf1; }
+
+  #chat-log {
+    flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.4; }
+  .msg.bot { align-self: flex-start; background: #fff; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+  .msg.user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 4px; display: flex; align-items: center; gap: 8px; }
+  .msg.bot .bot-label { font-size: 11px; color: #94a3b8; margin-bottom: 3px; }
+  .edit-btn {
+    background: rgba(255,255,255,0.2); border: none; color: #fff; font-size: 11px;
+    padding: 3px 8px; border-radius: 10px; cursor: pointer; white-space: nowrap;
+  }
+  .edit-btn:hover { background: rgba(255,255,255,0.35); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; align-self: flex-start; max-width: 92%; }
+  .chip {
+    background: #fff; border: 1px solid #cbd5e1; padding: 8px 14px; border-radius: 20px;
+    font-size: 13px; cursor: pointer;
+  }
+  .chip:hover { background: #f1f5f9; }
+  .chip:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  #map-bubble { align-self: flex-start; width: 100%; background: #fff; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); padding: 10px; }
+  #pin-map { height: 42vh; min-height: 260px; border-radius: 8px; transition: height 0.3s ease; }
+  #pin-map.expanded { height: 68vh; }
+  #pin-map-hint { font-size: 12px; color: #64748b; margin-top: 6px; }
+
+  #photo-preview { max-width: 220px; width: 100%; border-radius: 8px; margin-top: 8px; display: none; }
+
+  .typing-dots { display: flex; gap: 4px; padding: 4px 0; }
+  .typing-dots span { width: 6px; height: 6px; border-radius: 50%; background: #94a3b8; animation: blink 1.2s infinite ease-in-out; }
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
+
+  #input-dock {
+    display: none; border-top: 1px solid #d1d9e0; background: #fff; padding: 10px; gap: 8px; flex-direction: column;
+  }
+  #input-dock.active { display: flex; }
+  .toggle-row { display: flex; gap: 8px; }
+  .toggle-row button { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #cbd5e1; background: #f1f5f9; font-size: 13px; cursor: pointer; }
+  .toggle-row button.selected { background: #2563eb; color: #fff; border-color: #2563eb; }
+  #text-row { display: flex; gap: 8px; }
+  #text-row textarea { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid #cbd5e1; font-family: inherit; font-size: 14px; resize: none; }
+  #text-row button, #voice-row button { background: #2563eb; color: #fff; border: none; padding: 0 16px; border-radius: 10px; cursor: pointer; font-size: 14px; }
+  #voice-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #record-status { font-size: 12px; color: #64748b; }
+  audio { flex: 1; min-width: 140px; }
+
+  @media (min-width: 641px) {
+    #app-wrapper { padding: 20px 0; }
+    #app { border-radius: 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.12); overflow: hidden; height: calc(100% - 40px); }
+  }
+
+  @media (max-width: 400px) {
+    .msg { max-width: 90%; font-size: 13px; }
+    #header h1 { font-size: 15px; }
+    #header span { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>🌫️ Nouravey</h1>
+  <span>Report a Pollution Issue</span>
+</div>
+
+<div id="app-wrapper">
+<div id="app">
+  <div id="chat-log"></div>
+
+  <div id="input-dock">
+    <div class="toggle-row">
+      <button id="text-toggle" class="selected" onclick="selectInputType('text')">✏️ Text</button>
+      <button id="voice-toggle" onclick="selectInputType('voice')">🎤 Voice</button>
+    </div>
+    <div id="text-row">
+      <textarea id="text-description" rows="2" placeholder="Describe what you saw... (English or Kiswahili)"></textarea>
+      <button onclick="submitReport()">Send</button>
+    </div>
+    <div id="voice-row" style="display:none;">
+      <button id="record-btn" onclick="toggleRecording()">🎤 Start</button>
+      <span id="record-status"></span>
+      <audio id="audio-playback" controls style="display:none;"></audio>
+      <button id="voice-send-btn" onclick="submitReport()" style="display:none;">Send</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const wardsBySubcounty = {
+    changamwe: [['port_reitz', 'Port Reitz'], ['kipevu', 'Kipevu'], ['airport', 'Airport'], ['changamwe', 'Changamwe'], ['chaani', 'Chaani']],
+    jomvu: [['jomvu_kuu', 'Jomvu Kuu'], ['miritini', 'Miritini'], ['mikindani', 'Mikindani']],
+    kisauni: [['mjambere', 'Mjambere'], ['junda', 'Junda'], ['bamburi', 'Bamburi'], ['mwakirunge', 'Mwakirunge'], ['mtopanga', 'Mtopanga'], ['magogoni', 'Magogoni'], ['shanzu', 'Shanzu']],
+    nyali: [['frere_town', 'Frere Town'], ['ziwa_la_ngombe', "Ziwa la Ng'ombe"], ['mkomani', 'Mkomani'], ['kongowea', 'Kongowea'], ['kadzandani', 'Kadzandani']],
+    likoni: [['mtongwe', 'Mtongwe'], ['shika_adabu', 'Shika Adabu'], ['bofu', 'Bofu'], ['likoni', 'Likoni'], ['timbwani', 'Timbwani']],
+    mvita: [['mji_wa_kale', 'Mji wa Kale/Makadara'], ['tudor', 'Tudor'], ['tononoka', 'Tononoka'], ['majengo', 'Majengo'], ['shimanzi', 'Shimanzi/Ganjoni']]
+  };
+  const subcountyLabels = { changamwe: 'Changamwe', jomvu: 'Jomvu', kisauni: 'Kisauni', nyali: 'Nyali', likoni: 'Likoni', mvita: 'Mvita' };
+
+  let selectedSubcounty = null, selectedWard = null, selectedWardLabel = null;
+  let selectedLat = null, selectedLng = null;
+  let selectedPhotoFile = null;
+  let inputType = 'text';
+  let mediaRecorder = null, audioChunks = [], recordedBlob = null;
+  let pinMap = null, pinMarker = null;
+
+  const log = document.getElementById('chat-log');
+
+  function scrollToBottom() {
+    log.scrollTop = log.scrollHeight;
+  }
+
+  // Ray-casting point-in-polygon check. Works with GeoJSON Polygon rings
+  // (including holes) and MultiPolygon geometries — no external library needed.
+  function pointInRing(lng, lat, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1];
+      const xj = ring[j][0], yj = ring[j][1];
+      const intersect = ((yi > lat) !== (yj > lat)) &&
+        (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function isPointInsideWard(latlng, geoJsonLayer) {
+    let found = false;
+    geoJsonLayer.eachLayer(layer => {
+      const geom = layer.feature.geometry;
+      const polygons = geom.type === 'MultiPolygon' ? geom.coordinates : [geom.coordinates];
+      polygons.forEach(rings => {
+        // First ring is the outer boundary; subsequent rings are holes
+        if (pointInRing(latlng.lng, latlng.lat, rings[0])) {
+          let inHole = false;
+          for (let h = 1; h < rings.length; h++) {
+            if (pointInRing(latlng.lng, latlng.lat, rings[h])) inHole = true;
+          }
+          if (!inHole) found = true;
+        }
+      });
+    });
+    return found;
+  }
+
+  function clearFrom(marker) {
+    let el = marker;
+    while (el) {
+      const next = el.nextSibling;
+      el.remove();
+      el = next;
+    }
+  }
+
+  function addBotMessage(text) {
+    const div = document.createElement('div');
+    div.className = 'msg bot';
+    div.innerHTML = `<div class="bot-label">Nouravey</div>${text}`;
+    log.appendChild(div);
+    scrollToBottom();
+    return div;
+  }
+
+  function addUserMessage(text, onEdit) {
+    const div = document.createElement('div');
+    div.className = 'msg user';
+    const span = document.createElement('span');
+    span.textContent = text;
+    div.appendChild(span);
+    if (onEdit) {
+      const btn = document.createElement('button');
+      btn.className = 'edit-btn';
+      btn.textContent = 'Change';
+      btn.onclick = () => {
+        clearFrom(div);
+        onEdit();
+      };
+      div.appendChild(btn);
+    }
+    log.appendChild(div);
+    scrollToBottom();
+    return div;
+  }
+
+  function addChips(options, onSelect) {
+    const container = document.createElement('div');
+    container.className = 'chips';
+    options.forEach(([value, label]) => {
+      const btn = document.createElement('button');
+      btn.className = 'chip';
+      btn.textContent = label;
+      btn.onclick = () => {
+        Array.from(container.children).forEach(c => c.disabled = true);
+        onSelect(value, label);
+      };
+      container.appendChild(btn);
+    });
+    log.appendChild(container);
+    scrollToBottom();
+    return container;
+  }
+
+  function addTypingIndicator() {
+    const div = document.createElement('div');
+    div.className = 'msg bot';
+    div.id = 'typing-indicator';
+    div.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+    log.appendChild(div);
+    scrollToBottom();
+  }
+
+  function removeTypingIndicator() {
+    const el = document.getElementById('typing-indicator');
+    if (el) el.remove();
+  }
+
+  // --- Conversation flow ---
+
+  function startConversation() {
+    addBotMessage("Hi! Let's log a pollution report for Mombasa. Which subcounty are you in?");
+    askSubcounty();
+  }
+
+  function askSubcounty() {
+    const options = Object.keys(subcountyLabels).map(k => [k, subcountyLabels[k]]);
+    addChips(options, (value, label) => {
+      selectedSubcounty = value;
+      addUserMessage(label, () => {
+        addBotMessage("No problem — which subcounty are you in?");
+        askSubcounty();
+      });
+      askWard();
+    });
+  }
+
+  function askWard() {
+    addBotMessage(`Got it — which ward in ${subcountyLabels[selectedSubcounty]}?`);
+    addChips(wardsBySubcounty[selectedSubcounty], (value, label) => {
+      selectedWard = value;
+      selectedWardLabel = label;
+      addUserMessage(label, () => {
+        addBotMessage(`Sure — which ward in ${subcountyLabels[selectedSubcounty]}?`);
+        askWard();
+      });
+      askPin();
+    });
+  }
+
+  function askPin() {
+    addBotMessage(`Great — here's ${selectedWardLabel} ward. Tap the map to mark exactly where this is happening.`);
+
+    const bubble = document.createElement('div');
+    bubble.id = 'map-bubble';
+    bubble.innerHTML = '<div id="pin-map" class="expanded"></div><div id="pin-map-hint">Zoomed to ' + selectedWardLabel + ' ward boundary</div><div class="chips" id="pin-confirm-chip"></div>';
+    log.appendChild(bubble);
+    scrollToBottom();
+
+    let wardBoundaryLayer = null;
+
+    setTimeout(async () => {
+      if (pinMap) { pinMap.remove(); pinMap = null; pinMarker = null; }
+      pinMap = L.map('pin-map');
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap, &copy; CARTO'
+      }).addTo(pinMap);
+
+      try {
+        const res = await fetch(`/api/ward-boundary/${selectedWard}/`);
+        const wardGeoJSON = await res.json();
+        wardBoundaryLayer = L.geoJSON(wardGeoJSON, {
+          style: { color: '#2563eb', weight: 2, fillOpacity: 0.08, fillColor: '#2563eb' }
+        }).addTo(pinMap);
+        pinMap.fitBounds(wardBoundaryLayer.getBounds(), { padding: [20, 20] });
+      } catch (err) {
+        pinMap.setView([-4.05, 39.66], 13);
+      }
+
+      pinMap.invalidateSize();
+
+      pinMap.on('click', function(e) {
+        if (wardBoundaryLayer && !isPointInsideWard(e.latlng, wardBoundaryLayer)) {
+          const hint = document.getElementById('pin-map-hint');
+          hint.textContent = `Please tap within ${selectedWardLabel} ward's boundary.`;
+          hint.style.color = '#dc2626';
+          setTimeout(() => {
+            hint.textContent = `Zoomed to ${selectedWardLabel} ward boundary`;
+            hint.style.color = '';
+          }, 2500);
+          return;
+        }
+
+        selectedLat = e.latlng.lat;
+        selectedLng = e.latlng.lng;
+        if (pinMarker) pinMap.removeLayer(pinMarker);
+        pinMarker = L.marker([selectedLat, selectedLng]).addTo(pinMap);
+
+        const confirmArea = document.getElementById('pin-confirm-chip');
+        confirmArea.innerHTML = '';
+        const btn = document.createElement('button');
+        btn.className = 'chip';
+        btn.textContent = 'Confirm this location';
+        btn.onclick = () => {
+          bubble.remove();
+          addUserMessage('Location pinned', () => {
+            addBotMessage("Okay — tap the map again to update your location.");
+            askPin();
+          });
+          askPhoto();
+        };
+        confirmArea.appendChild(btn);
+      });
+    }, 100);
+  }
+
+  function askPhoto() {
+    addBotMessage("Now, please take or upload a photo of the issue.");
+
+    const bubble = document.createElement('div');
+    bubble.className = 'msg bot';
+    bubble.innerHTML = `
+      <input type="file" accept="image/*" capture="environment" id="photo-input">
+      <br><img id="photo-preview" />
+    `;
+    log.appendChild(bubble);
+    scrollToBottom();
+
+    document.getElementById('photo-input').addEventListener('change', function(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      selectedPhotoFile = file;
+      const preview = document.getElementById('photo-preview');
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = 'block';
+      addUserMessage('Photo attached', () => {
+        addBotMessage("No problem — please attach a new photo.");
+        askPhoto();
+      });
+      askDescription();
+    });
+  }
+
+  function askDescription() {
+    addBotMessage("Last step — describe what's happening. You can type or record your voice, in English or Kiswahili.");
+    document.getElementById('input-dock').classList.add('active');
+  }
+
+  function selectInputType(type) {
+    inputType = type;
+    document.getElementById('text-toggle').classList.toggle('selected', type === 'text');
+    document.getElementById('voice-toggle').classList.toggle('selected', type === 'voice');
+    document.getElementById('text-row').style.display = type === 'text' ? 'flex' : 'none';
+    document.getElementById('voice-row').style.display = type === 'voice' ? 'flex' : 'none';
+  }
+
+  async function toggleRecording() {
+    const btn = document.getElementById('record-btn');
+    const status = document.getElementById('record-status');
+
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mimeType = MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg' : 'audio/webm';
+        mediaRecorder = new MediaRecorder(stream, { mimeType });
+        audioChunks = [];
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+          recordedBlob = new Blob(audioChunks, { type: mimeType });
+          const audioEl = document.getElementById('audio-playback');
+          audioEl.src = URL.createObjectURL(recordedBlob);
+          audioEl.style.display = 'inline';
+          document.getElementById('voice-send-btn').style.display = 'inline-block';
+          status.textContent = 'Recorded ✓';
+        };
+        mediaRecorder.start();
+        btn.textContent = 'Stop';
+        status.textContent = 'Recording...';
+      } catch (err) {
+        alert('Microphone access denied or unavailable.');
+      }
+    } else {
+      mediaRecorder.stop();
+      btn.textContent = 'Record again';
+    }
+  }
+
+  async function submitReport() {
+    if (inputType === 'text') {
+      const text = document.getElementById('text-description').value.trim();
+      if (!text) { alert('Please describe what you saw.'); return; }
+      addUserMessage(text);
+    } else {
+      if (!recordedBlob) { alert('Please record a voice note first.'); return; }
+      addUserMessage('Voice note recorded');
+    }
+
+    document.getElementById('input-dock').classList.remove('active');
+    addTypingIndicator();
+
+    const formData = new FormData();
+    formData.append('ward', selectedWard);
+    formData.append('latitude', selectedLat);
+    formData.append('longitude', selectedLng);
+    formData.append('photo', selectedPhotoFile);
+    formData.append('input_type', inputType);
+
+    if (inputType === 'text') {
+      formData.append('text_description', document.getElementById('text-description').value.trim());
+    } else {
+      const ext = recordedBlob.type.includes('ogg') ? 'ogg' : 'webm';
+      formData.append('voice_note', recordedBlob, `voice_note.${ext}`);
+    }
+
+    try {
+      const response = await fetch('/api/reports/submit/', { method: 'POST', body: formData });
+      const data = await response.json();
+
+      removeTypingIndicator();
+
+      if (data.success) {
+        addBotMessage(`Thank you — your report has been logged and analyzed.`);
+        if (data.hotspot) {
+          addBotMessage(`<strong>Area status:</strong> ${data.hotspot.severity_label}<br>${data.hotspot.narrative}`);
+        }
+      } else {
+        const reason = data.rejection_reason || "This doesn't appear to be a pollution-related report.";
+        addBotMessage(`${reason}`);
+        speakRejection(reason);
+      }
+
+      const chips = document.createElement('div');
+      chips.className = 'chips';
+      const restartBtn = document.createElement('button');
+      restartBtn.className = 'chip';
+      restartBtn.textContent = 'Submit another report';
+      restartBtn.onclick = () => window.location.reload();
+      const mapBtn = document.createElement('button');
+      mapBtn.className = 'chip';
+      mapBtn.textContent = 'View map';
+      mapBtn.onclick = () => window.location.href = '/';
+      chips.appendChild(restartBtn);
+      chips.appendChild(mapBtn);
+      log.appendChild(chips);
+      scrollToBottom();
+
+    } catch (error) {
+      removeTypingIndicator();
+      addBotMessage('Something went wrong. Please check your connection and try again.');
+    }
+  }
+
+  function detectIsSwahili(text) {
+    const swahiliMarkers = ['moshi', 'hewa', 'uchafuzi', 'karibu', 'kwa', 'ni', 'na', 'katika', 'kuna', 'unaotoka', 'imekuwa', 'tafadhali'];
+    const lower = text.toLowerCase();
+    const matches = swahiliMarkers.filter(word => lower.includes(word)).length;
+    return matches >= 2;
+  }
+
+  function pickVoice(isSwahili) {
+    const voices = speechSynthesis.getVoices();
+    if (isSwahili) {
+      let voice = voices.find(v => v.lang.startsWith('sw') && /male/i.test(v.name));
+      if (!voice) voice = voices.find(v => v.lang.startsWith('sw'));
+      if (!voice) voice = voices.find(v => /male/i.test(v.name) && v.lang.startsWith('en'));
+      return voice;
+    } else {
+      let voice = voices.find(v => v.lang.startsWith('en') && /female/i.test(v.name));
+      if (!voice) voice = voices.find(v => v.lang.startsWith('en'));
+      return voice;
+    }
+  }
+
+  function speakRejection(text) {
+    if (!('speechSynthesis' in window)) return;
+    const trySpeak = () => {
+      const isSwahili = detectIsSwahili(text);
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voice = pickVoice(isSwahili);
+      if (voice) {
+        utterance.voice = voice;
+        utterance.lang = voice.lang;
+      } else {
+        utterance.lang = isSwahili ? 'sw-KE' : 'en-US';
+      }
+      speechSynthesis.speak(utterance);
+    };
+    if (speechSynthesis.getVoices().length === 0) {
+      speechSynthesis.onvoiceschanged = trySpeak;
+    } else {
+      trySpeak();
+    }
+  }
+
+  startConversation();
+</script>
+
+</body>
+</html>
