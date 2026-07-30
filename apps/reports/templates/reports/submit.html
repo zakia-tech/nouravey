@@ -92,15 +92,15 @@
 
   <div id="input-dock">
     <div class="toggle-row">
-      <button id="text-toggle" class="selected" onclick="selectInputType('text')">✏️ Text</button>
-      <button id="voice-toggle" onclick="selectInputType('voice')">🎤 Voice</button>
+      <button id="text-toggle" class="selected" onclick="selectInputType('text')">Text</button>
+      <button id="voice-toggle" onclick="selectInputType('voice')">Voice</button>
     </div>
     <div id="text-row">
       <textarea id="text-description" rows="2" placeholder="Describe what you saw... (English or Kiswahili)"></textarea>
       <button onclick="submitReport()">Send</button>
     </div>
     <div id="voice-row" style="display:none;">
-      <button id="record-btn" onclick="toggleRecording()">🎤 Start</button>
+      <button id="record-btn" onclick="toggleRecording()">Start</button>
       <span id="record-status"></span>
       <audio id="audio-playback" controls style="display:none;"></audio>
       <button id="voice-send-btn" onclick="submitReport()" style="display:none;">Send</button>
